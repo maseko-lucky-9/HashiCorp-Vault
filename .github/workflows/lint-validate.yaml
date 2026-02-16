@@ -1,0 +1,99 @@
+name: Lint and Validate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'helm/**'
+      - 'argocd/**'
+      - '.github/workflows/**'
+
+jobs:
+  helm-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.16.0'
+      
+      - name: Lint Helm chart
+        run: |
+          helm lint helm/vault/ -f helm/vault/values.yaml
+  
+  helm-template:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: '3.16.0'
+      
+      - name: Add HashiCorp Helm repo
+        run: helm repo add hashicorp https://helm.releases.hashicorp.com
+      
+      - name: Render templates
+        run: |
+          helm template vault hashicorp/vault \
+            --version 0.32.0 \
+            -f helm/vault/values.yaml \
+            --namespace vault \
+            > rendered.yaml
+      
+      - name: Install kubeconform
+        run: |
+          wget https://github.com/yannh/kubeconform/releases/latest/download/kubeconform-linux-amd64.tar.gz
+          tar xf kubeconform-linux-amd64.tar.gz
+          sudo mv kubeconform /usr/local/bin/
+      
+      - name: Validate Kubernetes manifests
+        run: |
+          kubeconform -summary -output json rendered.yaml
+  
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Run Trivy config scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'helm/vault/'
+          exit-code: '1'
+          severity: 'HIGH,CRITICAL'
+      
+      - name: Run Trivy image scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'image'
+          image-ref: 'hashicorp/vault:1.21.0'
+          exit-code: '0'  # Don't fail on image CVEs (informational only)
+          severity: 'HIGH,CRITICAL'
+      
+      - name: Install Checkov
+        run: pip install checkov
+      
+      - name: Run Checkov
+        run: |
+          checkov -d helm/vault/ --framework helm --quiet
+  
+  yaml-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Install yamllint
+        run: pip install yamllint
+      
+      - name: Lint YAML files
+        run: |
+          yamllint helm/vault/values.yaml argocd/

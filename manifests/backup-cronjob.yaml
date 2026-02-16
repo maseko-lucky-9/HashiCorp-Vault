@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vault-backup
+  namespace: vault
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vault-backup
+  namespace: vault
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/exec"]
+    verbs: ["get", "list", "create"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vault-backup
+  namespace: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: vault-backup
+subjects:
+  - kind: ServiceAccount
+    name: vault-backup
+    namespace: vault
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: vault-backup
+  namespace: vault
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: vault-backup
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: bitnami/kubectl:1.31
+              command:
+                - /bin/bash
+                - -c
+                - |
+                  set -euo pipefail
+                  
+                  TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+                  SNAPSHOT_FILE="vault-raft-backup-${TIMESTAMP}.snap"
+                  
+                  echo "Taking Raft snapshot..."
+                  kubectl exec -n vault vault-0 -- vault operator raft snapshot save "/tmp/${SNAPSHOT_FILE}"
+                  
+                  echo "Copying snapshot from pod..."
+                  kubectl cp "vault/vault-0:/tmp/${SNAPSHOT_FILE}" "/backups/${SNAPSHOT_FILE}"
+                  
+                  # Upload to S3 if configured
+                  if [ -n "${S3_BUCKET:-}" ]; then
+                    echo "Uploading to S3..."
+                    aws s3 cp "/backups/${SNAPSHOT_FILE}" "${S3_BUCKET}/${SNAPSHOT_FILE}"
+                  fi
+                  
+                  echo "✅ Backup complete: ${SNAPSHOT_FILE}"
+              env:
+                - name: S3_BUCKET
+                  value: ""  # Set to your S3 bucket URI
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              emptyDir: {}

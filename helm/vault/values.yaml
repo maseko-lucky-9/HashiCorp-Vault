@@ -1,0 +1,180 @@
+# HashiCorp Vault Helm Chart Values
+# Production-ready configuration for self-hosted Kubernetes
+# Chart version: 0.32.0 | Vault version: 1.21.0
+
+global:
+  enabled: true
+  tlsDisable: false # NEVER disable TLS in production
+
+injector:
+  enabled: true
+  replicas: 1
+
+  image:
+    repository: hashicorp/vault-k8s
+    tag: 1.5.0
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+  securityContext:
+    pod:
+      runAsNonRoot: true
+      runAsUser: 100
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    container:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+
+server:
+  image:
+    repository: hashicorp/vault
+    tag: 1.21.0 # Pin to exact version, never use 'latest'
+
+  # CRITICAL: OnDelete prevents automatic pod restarts during upgrades
+  # Vault pods must be manually deleted to control unseal sequence
+  updateStrategyType: OnDelete
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi # Increased for multi-engine stability (Transit, PKI, DB)
+
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+
+  livenessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true
+
+  # Enable process namespace sharing for better signal handling
+  shareProcessNamespace: true
+
+  # Security contexts - run as non-root with minimal capabilities
+  securityContext:
+    pod:
+      runAsNonRoot: true
+      runAsUser: 100
+      runAsGroup: 1000
+      fsGroup: 1000
+      seccompProfile:
+        type: RuntimeDefault
+    container:
+      allowPrivilegeEscalation: false
+      readOnlyRootFilesystem: true
+      capabilities:
+        drop:
+          - ALL
+        add:
+          - IPC_LOCK # Required for mlock() to prevent secrets from swapping to disk
+
+  # High Availability configuration
+  ha:
+    enabled: true
+    replicas: 3
+
+    raft:
+      enabled: true
+      setNodeId: true
+
+      config: |
+        ui = true
+
+        listener "tcp" {
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+          tls_disable = false
+          tls_cert_file = "/vault/tls/tls.crt"
+          tls_key_file  = "/vault/tls/tls.key"
+        }
+
+        storage "raft" {
+          path = "/vault/data"
+          
+          retry_join {
+            leader_api_addr = "https://vault-0.vault-internal:8200"
+            leader_tls_servername = "vault.vault.svc.cluster.local"
+          }
+          
+          retry_join {
+            leader_api_addr = "https://vault-1.vault-internal:8200"
+            leader_tls_servername = "vault.vault.svc.cluster.local"
+          }
+          
+          retry_join {
+            leader_api_addr = "https://vault-2.vault-internal:8200"
+            leader_tls_servername = "vault.vault.svc.cluster.local"
+          }
+        }
+
+        service_registration "kubernetes" {}
+
+        telemetry {
+          prometheus_retention_time = "30s"
+          disable_hostname = true
+        }
+
+  # Data storage - 10Gi per pod for Raft data
+  dataStorage:
+    enabled: true
+    size: 10Gi
+    storageClass: local-path # Change to your StorageClass
+    accessMode: ReadWriteOnce
+
+  # Audit storage - 5Gi for audit logs
+  auditStorage:
+    enabled: true
+    size: 5Gi
+    storageClass: local-path
+    accessMode: ReadWriteOnce
+
+  # Node affinity - CRITICAL when using local-path StorageClass
+  # Uncomment and configure for multi-node clusters to pin pods to specific nodes
+  # affinity: |
+  #   podAntiAffinity:
+  #     requiredDuringSchedulingIgnoredDuringExecution:
+  #       - labelSelector:
+  #           matchLabels:
+  #             app.kubernetes.io/name: vault
+  #         topologyKey: kubernetes.io/hostname
+
+  # Service configuration
+  service:
+    enabled: true
+    type: ClusterIP # Change to NodePort or LoadBalancer for external access
+    # For NodePort:
+    # type: NodePort
+    # nodePort: 30820
+    # For LoadBalancer (requires MetalLB):
+    # type: LoadBalancer
+    # loadBalancerIP: 192.168.1.100
+
+  # Standalone service for internal Raft communication
+  serviceInternal:
+    enabled: true
+
+ui:
+  enabled: true
+  serviceType: ClusterIP
+  # Expose via Ingress or kubectl port-forward
+
+# TLS configuration
+# Mount TLS certificates from cert-manager Secret
+serverTelemetry:
+  serviceMonitor:
+    enabled: false # Set to true if using Prometheus Operator
