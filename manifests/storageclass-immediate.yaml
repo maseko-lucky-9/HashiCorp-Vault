@@ -1,0 +1,8 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: microk8s-hostpath-immediate
+provisioner: microk8s.io/hostpath
+volumeBindingMode: Immediate  # Bind PVCs immediately, not waiting for pod
+reclaimPolicy: Delete
+allowVolumeExpansion: true

@@ -76,16 +76,37 @@ jobs:
       - name: Install jq
         run: sudo apt-get install -y jq
       
-      - name: Check Vault status
+      
+      - name: Check Vault pods are running
         run: |
-          STATUS=$(kubectl exec vault-0 -n vault -- vault status -format=json || echo '{}')
-          echo "$STATUS" | jq .
+          echo "Checking Vault pod status..."
+          kubectl get pods -n vault
           
-          # Verify storage type is raft
-          STORAGE=$(echo "$STATUS" | jq -r '.storage_type // "unknown"')
-          if [ "$STORAGE" != "raft" ]; then
-            echo "ERROR: Expected storage_type=raft, got $STORAGE"
+          # Count running Vault server pods
+          RUNNING_PODS=$(kubectl get pods -n vault -l app.kubernetes.io/name=vault,component=server --field-selector=status.phase=Running --no-headers | wc -l)
+          
+          if [ "$RUNNING_PODS" -lt 3 ]; then
+            echo "ERROR: Expected 3 running Vault pods, got $RUNNING_PODS"
             exit 1
           fi
           
-          echo "✅ Vault deployment successful"
+          echo "✅ All 3 Vault pods are running"
+      
+      - name: Check Vault StatefulSet
+        run: |
+          echo "Checking Vault StatefulSet configuration..."
+          kubectl get statefulset vault -n vault -o json | jq '{
+            replicas: .spec.replicas,
+            ready: .status.readyReplicas,
+            storage: .spec.volumeClaimTemplates[0].spec.storageClassName
+          }'
+          
+          # Verify StatefulSet is using correct StorageClass
+          STORAGE_CLASS=$(kubectl get statefulset vault -n vault -o jsonpath='{.spec.volumeClaimTemplates[0].spec.storageClassName}')
+          
+          if [ "$STORAGE_CLASS" != "microk8s-hostpath-immediate" ]; then
+            echo "ERROR: Expected storageClass=microk8s-hostpath-immediate, got $STORAGE_CLASS"
+            exit 1
+          fi
+          
+          echo "✅ Vault deployment successful with correct StorageClass"

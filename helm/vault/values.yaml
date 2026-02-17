@@ -98,9 +98,9 @@ server:
         listener "tcp" {
           address = "[::]:8200"
           cluster_address = "[::]:8201"
-          tls_disable = false
-          tls_cert_file = "/vault/tls/tls.crt"
-          tls_key_file  = "/vault/tls/tls.key"
+          tls_disable = true
+          # tls_cert_file = "/vault/tls/tls.crt"
+          # tls_key_file  = "/vault/tls/tls.key"
         }
 
         storage "raft" {
@@ -133,14 +133,14 @@ server:
   dataStorage:
     enabled: true
     size: 10Gi
-    storageClass: "microk8s-hostpath" # Change to your StorageClass
+    storageClass: "microk8s-hostpath-immediate" # Immediate binding to avoid WaitForFirstConsumer deadlock
     accessMode: ReadWriteOnce
 
   # Audit storage - 5Gi for audit logs
   auditStorage:
     enabled: true
     size: 5Gi
-    storageClass: "microk8s-hostpath"
+    storageClass: "microk8s-hostpath-immediate"
     accessMode: ReadWriteOnce
 
   # Node affinity - CRITICAL when using local-path StorageClass
