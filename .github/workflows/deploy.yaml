@@ -6,6 +6,20 @@ on:
     paths:
       - 'helm/**'
       - 'argocd/**'
+      - 'manifests/**'
+      - 'policies/**'
+      - 'scripts/**'
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
 
 jobs:
   validate:

@@ -6,7 +6,11 @@ on:
     paths:
       - 'helm/**'
       - 'argocd/**'
+      - 'manifests/**'
+      - 'policies/**'
       - '.github/workflows/**'
+
+  workflow_dispatch:
 
 jobs:
   helm-validate:
