@@ -13,22 +13,6 @@ jobs:
     runs-on: self-hosted
     environment: production
     steps:
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.31.0'
-      
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: '3.16.0'
-      
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
-      
       - name: Show Helm history
         run: |
           echo "Current Helm releases:"

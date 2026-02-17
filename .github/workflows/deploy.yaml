@@ -29,11 +29,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
       
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: '3.16.0'
-      
       - name: Add HashiCorp Helm repo
         run: |
           helm repo add hashicorp https://helm.releases.hashicorp.com
@@ -55,22 +50,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.31.0'
-      
-      - name: Install Helm
-        uses: azure/setup-helm@v4
-        with:
-          version: '3.16.0'
-      
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-          chmod 600 $HOME/.kube/config
       
       - name: Add HashiCorp Helm repo
         run: helm repo add hashicorp https://helm.releases.hashicorp.com
@@ -94,16 +73,6 @@ jobs:
     runs-on: self-hosted
     needs: deploy
     steps:
-      - name: Configure kubeconfig
-        run: |
-          mkdir -p $HOME/.kube
-          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
-      
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
-        with:
-          version: 'v1.31.0'
-      
       - name: Install jq
         run: sudo apt-get install -y jq
       
