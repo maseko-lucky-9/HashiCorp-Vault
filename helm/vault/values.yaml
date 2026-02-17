@@ -133,14 +133,14 @@ server:
   dataStorage:
     enabled: true
     size: 10Gi
-    storageClass: local-path # Change to your StorageClass
+    storageClass: "microk8s-hostpath" # Change to your StorageClass
     accessMode: ReadWriteOnce
 
   # Audit storage - 5Gi for audit logs
   auditStorage:
     enabled: true
     size: 5Gi
-    storageClass: local-path
+    storageClass: "microk8s-hostpath"
     accessMode: ReadWriteOnce
 
   # Node affinity - CRITICAL when using local-path StorageClass
