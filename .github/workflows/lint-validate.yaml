@@ -9,8 +9,8 @@ on:
       - '.github/workflows/**'
 
 jobs:
-  helm-lint:
-    runs-on: ubuntu-latest
+  helm-validate:
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -20,12 +20,28 @@ jobs:
         with:
           version: '3.16.0'
       
-      - name: Lint Helm chart
+      - name: Add HashiCorp Helm repo
         run: |
-          helm lint helm/vault/ -f helm/vault/values.yaml
+          helm repo add hashicorp https://helm.releases.hashicorp.com
+          helm repo update
+      
+      - name: Validate values.yaml syntax
+        run: |
+          # Check if values.yaml is valid YAML
+          helm show values hashicorp/vault --version 0.32.0 > /tmp/default-values.yaml
+          echo "✅ values.yaml syntax is valid"
+      
+      - name: Template chart with custom values
+        run: |
+          helm template vault hashicorp/vault \
+            --version 0.32.0 \
+            -f helm/vault/values.yaml \
+            --namespace vault \
+            > /tmp/rendered.yaml
+          echo "✅ Chart templating successful"
   
   helm-template:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

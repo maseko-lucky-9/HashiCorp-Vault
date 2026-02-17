@@ -19,8 +19,19 @@ jobs:
         with:
           version: '3.16.0'
       
-      - name: Lint Helm chart
-        run: helm lint helm/vault/ -f helm/vault/values.yaml
+      - name: Add HashiCorp Helm repo
+        run: |
+          helm repo add hashicorp https://helm.releases.hashicorp.com
+          helm repo update
+      
+      - name: Validate Helm values
+        run: |
+          helm template vault hashicorp/vault \
+            --version 0.32.0 \
+            -f helm/vault/values.yaml \
+            --namespace vault \
+            > /tmp/rendered.yaml
+          echo "✅ Helm values validation successful"
   
   deploy:
     runs-on: self-hosted
