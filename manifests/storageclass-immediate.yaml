@@ -4,5 +4,5 @@ metadata:
   name: microk8s-hostpath-immediate
 provisioner: microk8s.io/hostpath
 volumeBindingMode: Immediate  # Bind PVCs immediately, not waiting for pod
-reclaimPolicy: Delete
+reclaimPolicy: Retain  # IMPORTANT: Preserves PV data when PVCs are deleted
 allowVolumeExpansion: true

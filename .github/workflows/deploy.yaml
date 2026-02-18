@@ -42,10 +42,116 @@ jobs:
             --namespace vault \
             > /tmp/rendered.yaml
           echo "✅ Helm values validation successful"
-  
-  deploy:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # PRE-DEPLOY CHECK
+  # Detects whether this is a fresh deployment or a redeployment with existing
+  # PersistentVolumes. Sets output variables consumed by downstream jobs.
+  # ─────────────────────────────────────────────────────────────────────────────
+  pre-deploy-check:
     runs-on: self-hosted
     needs: validate
+    outputs:
+      fresh_deploy: ${{ steps.pv-check.outputs.fresh_deploy }}
+      pv_exists: ${{ steps.pv-check.outputs.pv_exists }}
+      pvcs_bound: ${{ steps.pv-check.outputs.pvcs_bound }}
+      released_pvs: ${{ steps.pv-check.outputs.released_pvs }}
+    steps:
+      - name: Check existing PVs and PVCs
+        id: pv-check
+        run: |
+          echo "═══════════════════════════════════════════════════"
+          echo "  Pre-Deploy Storage Check"
+          echo "═══════════════════════════════════════════════════"
+
+          # ── Check if vault namespace exists ──────────────────────────────────
+          if ! kubectl get namespace vault &>/dev/null; then
+            echo "ℹ️  Namespace 'vault' does not exist — fresh deployment"
+            echo "fresh_deploy=true"  >> "$GITHUB_OUTPUT"
+            echo "pv_exists=false"    >> "$GITHUB_OUTPUT"
+            echo "pvcs_bound=false"   >> "$GITHUB_OUTPUT"
+            echo "released_pvs=0"     >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # ── Check existing PVCs ───────────────────────────────────────────────
+          TOTAL_PVCS=$(kubectl get pvc -n vault -l app.kubernetes.io/name=vault \
+            --no-headers 2>/dev/null | wc -l || echo "0")
+          BOUND_PVCS=$(kubectl get pvc -n vault -l app.kubernetes.io/name=vault \
+            --field-selector=status.phase=Bound --no-headers 2>/dev/null | wc -l || echo "0")
+
+          echo ""
+          echo "📦 PVC Status:"
+          kubectl get pvc -n vault 2>/dev/null || echo "  (none found)"
+
+          # ── Check existing PVs (by StorageClass) ─────────────────────────────
+          TOTAL_PVS=$(kubectl get pv \
+            --field-selector=spec.storageClassName=microk8s-hostpath-immediate \
+            --no-headers 2>/dev/null | grep -c "vault" || echo "0")
+          RELEASED_PVS=$(kubectl get pv \
+            --field-selector=spec.storageClassName=microk8s-hostpath-immediate,status.phase=Released \
+            --no-headers 2>/dev/null | grep -c "vault" || echo "0")
+
+          echo ""
+          echo "💾 PV Status (microk8s-hostpath-immediate):"
+          kubectl get pv --field-selector=spec.storageClassName=microk8s-hostpath-immediate \
+            2>/dev/null || echo "  (none found)"
+
+          # ── Determine deployment type ─────────────────────────────────────────
+          echo ""
+          if [ "$TOTAL_PVCS" -eq 0 ] && [ "$TOTAL_PVS" -eq 0 ]; then
+            echo "🆕 FRESH DEPLOYMENT — no existing PVs or PVCs found"
+            echo "fresh_deploy=true"  >> "$GITHUB_OUTPUT"
+            echo "pv_exists=false"    >> "$GITHUB_OUTPUT"
+            echo "pvcs_bound=false"   >> "$GITHUB_OUTPUT"
+            echo "released_pvs=0"     >> "$GITHUB_OUTPUT"
+
+          elif [ "$BOUND_PVCS" -gt 0 ]; then
+            echo "♻️  REDEPLOYMENT — $BOUND_PVCS bound PVC(s) found, data will be preserved"
+            echo "fresh_deploy=false"                >> "$GITHUB_OUTPUT"
+            echo "pv_exists=true"                    >> "$GITHUB_OUTPUT"
+            echo "pvcs_bound=true"                   >> "$GITHUB_OUTPUT"
+            echo "released_pvs=$RELEASED_PVS"        >> "$GITHUB_OUTPUT"
+
+          elif [ "$RELEASED_PVS" -gt 0 ]; then
+            echo "⚠️  REDEPLOYMENT — $RELEASED_PVS Released PV(s) found (PVCs were deleted)"
+            echo "    Data exists on PVs but PVCs must be rebound."
+            echo "    Run scripts/fix-storageclass.sh to clear claimRef before deploying."
+            echo "fresh_deploy=false"                >> "$GITHUB_OUTPUT"
+            echo "pv_exists=true"                    >> "$GITHUB_OUTPUT"
+            echo "pvcs_bound=false"                  >> "$GITHUB_OUTPUT"
+            echo "released_pvs=$RELEASED_PVS"        >> "$GITHUB_OUTPUT"
+
+          else
+            echo "🆕 FRESH DEPLOYMENT — no usable PVs or PVCs found"
+            echo "fresh_deploy=true"  >> "$GITHUB_OUTPUT"
+            echo "pv_exists=false"    >> "$GITHUB_OUTPUT"
+            echo "pvcs_bound=false"   >> "$GITHUB_OUTPUT"
+            echo "released_pvs=0"     >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Warn on Released PVs
+        if: ${{ steps.pv-check.outputs.released_pvs != '0' }}
+        run: |
+          echo "══════════════════════════════════════════════════════════════"
+          echo "  ⚠️  ACTION REQUIRED: Released PersistentVolumes Detected"
+          echo "══════════════════════════════════════════════════════════════"
+          echo ""
+          echo "  ${{ steps.pv-check.outputs.released_pvs }} PV(s) are in Released state."
+          echo "  These PVs contain Vault data from a previous deployment."
+          echo ""
+          echo "  To rebind them before deploying, run on your server:"
+          echo ""
+          echo "    cd scripts"
+          echo "    ./fix-storageclass.sh --preserve-data"
+          echo ""
+          echo "  This will clear the claimRef on Released PVs so Kubernetes"
+          echo "  can bind new PVCs to them on the next helm install."
+          echo "══════════════════════════════════════════════════════════════"
+
+  deploy:
+    runs-on: self-hosted
+    needs: pre-deploy-check
     environment: production  # Requires manual approval in GitHub Settings
     steps:
       - name: Checkout code
@@ -72,17 +178,21 @@ jobs:
           sleep 15
           kubectl get pods -n vault
           echo ""
-          echo "ℹ️  Vault pods may show 0/1 Ready — this is expected."
-          echo "   Run ./scripts/init-vault.sh after first deployment."
-  
+          if [ "${{ needs.pre-deploy-check.outputs.fresh_deploy }}" = "true" ]; then
+            echo "ℹ️  Fresh deployment — Vault pods will show 0/1 Ready until initialized."
+            echo "   Run ./scripts/init-vault.sh after this workflow completes."
+          else
+            echo "ℹ️  Redeployment — Vault pods will become Ready after unsealing."
+            echo "   If pods remain sealed, run: ./scripts/init-vault.sh (unseal only)"
+          fi
+
   smoke-test:
     runs-on: self-hosted
-    needs: deploy
+    needs: [pre-deploy-check, deploy]
     steps:
       - name: Install jq
         run: sudo apt-get install -y jq
-      
-      
+
       - name: Check Vault pods exist
         run: |
           echo "Checking Vault pod status..."
@@ -95,20 +205,43 @@ jobs:
             exit 1
           fi
           echo "✅ StatefulSet created with $DESIRED replicas"
-      
+
       - name: Check PVCs are bound
         run: |
           echo "Checking PVC status..."
           kubectl get pvc -n vault
-          
-          PENDING_PVCS=$(kubectl get pvc -n vault --no-headers | grep -c Pending || true)
-          if [ "$PENDING_PVCS" -gt 0 ]; then
-            echo "⚠️  WARNING: $PENDING_PVCS PVC(s) still Pending"
-            kubectl describe pvc -n vault | grep -A5 Events
-          else
-            echo "✅ All PVCs are bound"
-          fi
-      
+
+          FRESH_DEPLOY="${{ needs.pre-deploy-check.outputs.fresh_deploy }}"
+
+          # Retry loop — PVCs may take a moment to bind on fresh deployments
+          MAX_RETRIES=6
+          RETRY_INTERVAL=10
+          for i in $(seq 1 $MAX_RETRIES); do
+            PENDING_PVCS=$(kubectl get pvc -n vault --no-headers 2>/dev/null | grep -c Pending || true)
+            BOUND_PVCS=$(kubectl get pvc -n vault --field-selector=status.phase=Bound \
+              --no-headers 2>/dev/null | wc -l || echo "0")
+
+            if [ "$PENDING_PVCS" -eq 0 ]; then
+              echo "✅ All PVCs are bound ($BOUND_PVCS total)"
+              break
+            fi
+
+            if [ "$i" -eq "$MAX_RETRIES" ]; then
+              echo "❌ ERROR: $PENDING_PVCS PVC(s) still Pending after $((MAX_RETRIES * RETRY_INTERVAL))s"
+              echo ""
+              kubectl describe pvc -n vault | grep -A 10 "Events:"
+              echo ""
+              if [ "$FRESH_DEPLOY" = "false" ]; then
+                echo "⚠️  This is a redeployment — Released PVs may need claimRef cleared."
+                echo "   Run: ./scripts/fix-storageclass.sh --preserve-data"
+              fi
+              exit 1
+            fi
+
+            echo "⏳ Attempt $i/$MAX_RETRIES — $PENDING_PVCS PVC(s) still Pending, retrying in ${RETRY_INTERVAL}s..."
+            sleep $RETRY_INTERVAL
+          done
+
       - name: Check Vault StatefulSet config
         run: |
           echo "Checking StatefulSet configuration..."
@@ -126,7 +259,12 @@ jobs:
           
           echo "✅ Vault deployment successful"
           echo ""
-          echo "═══════════════════════════════════════════"
-          echo "  NEXT STEP: Initialize Vault"
-          echo "  Run: ./scripts/init-vault.sh"
-          echo "═══════════════════════════════════════════"
+          echo "═══════════════════════════════════════════════════"
+          if [ "${{ needs.pre-deploy-check.outputs.fresh_deploy }}" = "true" ]; then
+            echo "  NEXT STEP: Initialize Vault"
+            echo "  Run: ./scripts/init-vault.sh"
+          else
+            echo "  Redeployment complete — Vault data preserved"
+            echo "  If pods are sealed, unseal with your unseal keys"
+          fi
+          echo "═══════════════════════════════════════════════════"
