@@ -170,6 +170,15 @@ jobs:
       - name: Add HashiCorp Helm repo
         run: helm repo add hashicorp https://helm.releases.hashicorp.com
       
+      - name: Apply infrastructure manifests
+        run: |
+          echo "Applying StorageClass, NetworkPolicy, and PDB..."
+          kubectl apply -f manifests/storageclass-immediate.yaml
+          kubectl apply -f manifests/network-policy.yaml
+          kubectl apply -f manifests/pod-disruption-budget.yaml
+          echo "✅ Infrastructure manifests applied"
+          kubectl get storageclass microk8s-hostpath-immediate
+      
       - name: Deploy Vault
         run: |
           helm upgrade --install vault hashicorp/vault \
