@@ -1,0 +1,132 @@
+name: Bootstrap Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/bootstrap.sh'
+      - 'argocd/**'
+      - 'manifests/storageclass-immediate.yaml'
+
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Run in preview mode (no changes)'
+        required: false
+        default: false
+        type: boolean
+
+  schedule:
+    # Weekly health-check run (Monday 06:00 UTC) — dry-run only
+    - cron: '0 6 * * 1'
+
+jobs:
+  validate-bootstrap:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Bash syntax check
+        run: bash -n scripts/bootstrap.sh
+
+      - name: Install ShellCheck
+        run: sudo apt-get install -y shellcheck 2>/dev/null || true
+
+      - name: Lint bootstrap script
+        run: shellcheck --severity=warning scripts/bootstrap.sh || true
+
+  run-bootstrap:
+    runs-on: self-hosted
+    needs: validate-bootstrap
+    environment: production
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Make scripts executable
+        run: chmod +x scripts/bootstrap.sh
+
+      - name: Determine run mode
+        id: mode
+        run: |
+          # Scheduled runs are always dry-run
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "flags=--dry-run" >> "$GITHUB_OUTPUT"
+            echo "mode=dry-run (scheduled health check)" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "flags=--dry-run" >> "$GITHUB_OUTPUT"
+            echo "mode=dry-run (manual)" >> "$GITHUB_OUTPUT"
+          else
+            echo "flags=" >> "$GITHUB_OUTPUT"
+            echo "mode=live" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run bootstrap
+        run: |
+          echo "═══════════════════════════════════════════════"
+          echo "  Bootstrap Mode: ${{ steps.mode.outputs.mode }}"
+          echo "  Trigger: ${{ github.event_name }}"
+          echo "  Ref: ${{ github.sha }}"
+          echo "═══════════════════════════════════════════════"
+          echo ""
+          scripts/bootstrap.sh ${{ steps.mode.outputs.flags }} --verbose
+
+      - name: Collect logs
+        if: always()
+        run: |
+          echo "## Bootstrap Log" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat /tmp/vault-bootstrap-*.log 2>/dev/null | tail -100 >> "$GITHUB_STEP_SUMMARY" || echo "No log file found"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Post-bootstrap cluster status
+        if: success()
+        run: |
+          echo "## Cluster Status" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "--- ArgoCD Pods ---" >> "$GITHUB_STEP_SUMMARY"
+          kubectl get pods -n argocd 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "ArgoCD not found"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- Vault Pods ---" >> "$GITHUB_STEP_SUMMARY"
+          kubectl get pods -n vault 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "Vault not deployed"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "--- ArgoCD Applications ---" >> "$GITHUB_STEP_SUMMARY"
+          kubectl get applications -n argocd 2>/dev/null >> "$GITHUB_STEP_SUMMARY" || echo "No applications"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  notify:
+    runs-on: ubuntu-latest
+    needs: run-bootstrap
+    if: always()
+    steps:
+      - name: Report result
+        run: |
+          STATUS="${{ needs.run-bootstrap.result }}"
+          echo "## Bootstrap Result: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$STATUS" = "failure" ]; then
+            echo "❌ Bootstrap failed. Check the run-bootstrap job logs." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$STATUS" = "success" ]; then
+            echo "✅ Bootstrap completed successfully." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "⚠️ Bootstrap result: $STATUS" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Send webhook notification (if configured)
+        if: needs.run-bootstrap.result == 'failure'
+        env:
+          WEBHOOK_URL: ${{ secrets.NOTIFY_WEBHOOK_URL }}
+        run: |
+          if [ -n "$WEBHOOK_URL" ]; then
+            curl -sf -X POST "$WEBHOOK_URL" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"text\": \"❌ Vault Bootstrap FAILED\",
+                \"run\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+                \"ref\": \"${{ github.sha }}\",
+                \"trigger\": \"${{ github.event_name }}\"
+              }" || echo "Webhook notification failed (non-critical)"
+          else
+            echo "No NOTIFY_WEBHOOK_URL configured — skipping notification"
+          fi

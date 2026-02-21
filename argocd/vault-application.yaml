@@ -7,20 +7,24 @@ metadata:
     - resources-finalizer.argocd.argoproj.io
 spec:
   project: default
-  
-  source:
-    repoURL: https://github.com/maseko-lucky-9/HashiCorp-Vault.git  # CHANGE THIS
-    targetRevision: main  # For production, pin to a Git tag or SHA
-    path: helm/vault
-    helm:
-      version: v3.16  # Pin Helm version to prevent rendering differences
-      valueFiles:
-        - values.yaml
-  
+
+  # Multi-source: Helm chart from HashiCorp + values from this Git repo
+  sources:
+    - repoURL: https://helm.releases.hashicorp.com
+      chart: vault
+      targetRevision: 0.32.0
+      helm:
+        valueFiles:
+          - $values/helm/vault/values.yaml
+
+    - repoURL: https://github.com/maseko-lucky-9/HashiCorp-Vault.git  # CHANGE THIS
+      targetRevision: main  # For production, pin to a Git tag or SHA
+      ref: values
+
   destination:
     server: https://kubernetes.default.svc
     namespace: vault
-  
+
   syncPolicy:
     automated:
       prune: true
@@ -34,7 +38,7 @@ spec:
         duration: 5s
         factor: 2
         maxDuration: 3m
-  
+
   # Ignore differences in pod annotations that Vault modifies at runtime
   ignoreDifferences:
     - group: apps

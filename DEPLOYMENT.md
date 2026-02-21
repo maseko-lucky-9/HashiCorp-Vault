@@ -41,20 +41,24 @@ sudo ufw allow 8201/tcp    # Vault cluster
 sudo ufw --force enable
 ```
 
-### Step 2: Install Kubernetes (k3s)
+### Step 2: Install Kubernetes (MicroK8s)
 
 ```bash
-# Install k3s
-curl -sfL https://get.k3s.io | sh -
+# Install MicroK8s
+sudo snap install microk8s --classic --channel=1.31/stable
 
-# Verify installation
-sudo k3s kubectl get nodes
+# Add your user to the microk8s group
+sudo usermod -aG microk8s $USER
+newgrp microk8s
 
-# Set up kubeconfig for non-root user
-mkdir -p ~/.kube
-sudo cp /etc/rancher/k3s/k3s.yaml ~/.kube/config
-sudo chown $(id -u):$(id -g) ~/.kube/config
-export KUBECONFIG=~/.kube/config
+# Wait for MicroK8s to be ready
+microk8s status --wait-ready
+
+# Enable required addons
+microk8s enable dns hostpath-storage ingress
+
+# Set up kubectl alias
+sudo snap alias microk8s.kubectl kubectl
 
 # Verify kubectl works
 kubectl get nodes

@@ -69,11 +69,12 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 ├── helm/vault/
 │   └── values.yaml                  # Helm chart values (HA, security, storage)
 ├── argocd/
-│   └── vault-application.yaml       # ArgoCD Application manifest
+│   └── vault-application.yaml       # ArgoCD Application manifest (multi-source)
 ├── .github/
 │   └── workflows/
 │       ├── lint-validate.yaml        # PR validation (template + kubeconform + Trivy)
 │       ├── deploy.yaml               # Deployment workflow (push to main)
+│       ├── bootstrap.yml             # ArgoCD + Vault bootstrap (push/dispatch/schedule)
 │       └── rollback.yaml             # Manual rollback (workflow_dispatch)
 ├── manifests/
 │   ├── storageclass-immediate.yaml   # Custom StorageClass (Immediate binding)
@@ -85,7 +86,8 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 │   ├── admin.hcl                     # Admin (denies sys/seal)
 │   └── database-dynamic.hcl          # Dynamic DB credential generation
 ├── scripts/
-│   ├── bootstrap-argocd.sh           # One-command ArgoCD + Vault bootstrap
+│   ├── bootstrap.sh                  # Production bootstrap (ArgoCD + Vault + deps)
+│   ├── bootstrap-argocd.sh           # Legacy bootstrap (superseded by bootstrap.sh)
 │   ├── init-vault.sh                 # First-time Vault initialization
 │   ├── backup-vault.sh               # Manual Raft snapshot + S3 upload
 │   ├── fix-storageclass.sh           # StorageClass migration helper
@@ -155,7 +157,31 @@ chmod +x bootstrap-argocd.sh
 
 See [`scripts/BOOTSTRAP-README.md`](scripts/BOOTSTRAP-README.md) for the complete bootstrap guide.
 
-### Option B: Manual Deployment
+### Option B: Zero-Touch via GitHub Actions
+
+Push to `main` and the entire stack deploys automatically — no SSH required:
+
+1. **Configure a self-hosted runner** on your MicroK8s server (see [SELF-HOSTED-RUNNER.md](.github/SELF-HOSTED-RUNNER.md))
+2. **Push any change** to `scripts/`, `argocd/`, or `manifests/` on `main`
+3. **GitHub Actions** runs `bootstrap.sh` on the self-hosted runner
+4. **ArgoCD + Vault** are deployed automatically
+
+To trigger manually or in preview mode:
+
+```
+GitHub → Actions → Bootstrap Infrastructure → Run workflow → ☑ dry_run
+```
+
+The workflow also runs a weekly health check every Monday (dry-run only).
+
+| Variable               | Default                 | Description                     |
+| ---------------------- | ----------------------- | ------------------------------- |
+| `ARGOCD_VERSION`       | `v2.14.0`               | ArgoCD version to install       |
+| `HELM_MIN_VERSION`     | `3.12.0`                | Minimum acceptable Helm version |
+| `MICROK8S_ADDONS`      | `dns, storage, ingress` | Addons to enable                |
+| `HEALTH_CHECK_TIMEOUT` | `300`                   | Seconds to wait for ArgoCD      |
+
+### Option C: Manual Deployment
 
 #### Step 1: Apply Infrastructure Manifests
 
