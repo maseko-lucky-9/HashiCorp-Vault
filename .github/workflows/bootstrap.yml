@@ -96,7 +96,7 @@ jobs:
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
   notify:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     needs: run-bootstrap
     if: always()
     steps:

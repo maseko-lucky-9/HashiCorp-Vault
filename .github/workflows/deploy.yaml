@@ -200,8 +200,14 @@ jobs:
     runs-on: self-hosted
     needs: [pre-deploy-check, deploy]
     steps:
-      - name: Install jq
-        run: sudo apt-get install -y jq
+      - name: Ensure jq is available
+        run: |
+          if command -v jq &> /dev/null; then
+            echo "✅ jq already installed: $(jq --version)"
+          else
+            echo "Installing jq..."
+            sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq
+          fi
 
       - name: Check Vault pods exist
         run: |
