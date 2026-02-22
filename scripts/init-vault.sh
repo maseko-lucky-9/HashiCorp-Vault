@@ -3,6 +3,10 @@ set -euo pipefail
 
 # Vault Initialization Script
 # Run this ONCE after the first deployment to initialize and configure Vault
+#
+# ⚠️  SECURITY: This script prints unseal keys and root token to stdout.
+#    NEVER run this in CI/CD pipelines — keys will be captured in logs.
+#    Always run interactively via SSH to the server.
 
 VAULT_NAMESPACE="vault"
 VAULT_POD="vault-0"
@@ -49,7 +53,7 @@ done
 # Join and unseal vault-1 and vault-2
 for POD in vault-1 vault-2; do
   echo "Joining $POD to Raft cluster..."
-  kubectl exec -n "$VAULT_NAMESPACE" "$POD" -- vault operator raft join https://vault-0.vault-internal:8200
+  kubectl exec -n "$VAULT_NAMESPACE" "$POD" -- vault operator raft join http://vault-0.vault-internal:8200
   
   echo "Unsealing $POD..."
   for i in 0 1 2; do

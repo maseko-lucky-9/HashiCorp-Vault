@@ -98,7 +98,7 @@ server:
         listener "tcp" {
           address = "[::]:8200"
           cluster_address = "[::]:8201"
-          tls_disable = true
+          tls_disable = true  # Disable for initial setup — enable after cert-manager is configured
           # tls_cert_file = "/vault/tls/tls.crt"
           # tls_key_file  = "/vault/tls/tls.key"
         }

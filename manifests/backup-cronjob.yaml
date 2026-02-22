@@ -61,19 +61,37 @@ spec:
                   echo "Copying snapshot from pod..."
                   kubectl cp "vault/vault-0:/tmp/${SNAPSHOT_FILE}" "/backups/${SNAPSHOT_FILE}"
                   
+                  # Prune local backups older than 7 days
+                  echo "Pruning backups older than 7 days..."
+                  find /backups -name "vault-raft-backup-*.snap" -mtime +7 -delete 2>/dev/null || true
+                  
                   # Upload to S3 if configured
                   if [ -n "${S3_BUCKET:-}" ]; then
                     echo "Uploading to S3..."
                     aws s3 cp "/backups/${SNAPSHOT_FILE}" "${S3_BUCKET}/${SNAPSHOT_FILE}"
+                  else
+                    echo "⚠️  S3_BUCKET not configured — backup stored locally only"
                   fi
                   
                   echo "✅ Backup complete: ${SNAPSHOT_FILE}"
+                  ls -lh /backups/vault-raft-backup-*.snap | tail -5
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 200m
+                  memory: 128Mi
               env:
                 - name: S3_BUCKET
-                  value: ""  # Set to your S3 bucket URI
+                  value: ""  # Set to your S3 bucket URI (e.g. s3://my-vault-backups)
               volumeMounts:
                 - name: backups
                   mountPath: /backups
           volumes:
+            # hostPath provides persistent local storage for backups.
+            # For production, configure S3_BUCKET for off-site redundancy.
             - name: backups
-              emptyDir: {}
+              hostPath:
+                path: /var/backups/vault
+                type: DirectoryOrCreate

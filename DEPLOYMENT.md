@@ -209,8 +209,9 @@ helm upgrade --install vault hashicorp/vault \
   --namespace vault \
   --create-namespace \
   -f helm/vault/values.yaml \
-  --wait \
   --timeout 10m
+  # NOTE: Do NOT use --wait on first deployment.
+  # Vault pods remain 0/1 Ready until manually initialized (Step 10).
 
 # Verify pods are running (they will be sealed)
 kubectl get pods -n vault
