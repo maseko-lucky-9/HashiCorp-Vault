@@ -129,7 +129,7 @@ The script executes the following steps in order:
   ArgoCD Admin Credentials
 ═══════════════════════════════════════════════════════
   Username: admin
-  Password: xK9mP2nQ7vR4sT8w
+  Password: <password>
 ═══════════════════════════════════════════════════════
 
 [2026-02-16 21:22:34] ⚠️  IMPORTANT: Change this password immediately after first login!

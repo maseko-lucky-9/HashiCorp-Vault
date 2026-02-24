@@ -20,14 +20,14 @@ echo "Pod: $VAULT_POD"
 echo ""
 
 # Check if Vault is unsealed
-if ! kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault status 2>/dev/null | grep -q "Sealed.*false"; then
+if ! kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -c vault -- sh -c "VAULT_ADDR=http://127.0.0.1:8200 vault status" 2>/dev/null | grep -q "Sealed.*false"; then
   echo "❌ ERROR: Vault is sealed. Cannot take snapshot."
   exit 1
 fi
 
 # Take Raft snapshot
 echo "Taking Raft snapshot..."
-kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -- vault operator raft snapshot save "/tmp/${SNAPSHOT_FILE}"
+kubectl exec -n "$VAULT_NAMESPACE" "$VAULT_POD" -c vault -- sh -c "VAULT_ADDR=http://127.0.0.1:8200 vault operator raft snapshot save /tmp/${SNAPSHOT_FILE}"
 
 # Copy snapshot from pod
 echo "Copying snapshot from pod..."
