@@ -4,7 +4,7 @@ metadata:
   name: vault-pdb
   namespace: vault
 spec:
-  minAvailable: 2
+  minAvailable: 0  # Standalone mode (1 replica) — set to 2 if re-enabling HA
   selector:
     matchLabels:
       app.kubernetes.io/name: vault

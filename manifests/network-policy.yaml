@@ -39,15 +39,6 @@ spec:
         - protocol: TCP
           port: 8200
     
-    # Allow Raft cluster communication (8201) between Vault pods
-    - from:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: vault
-      ports:
-        - protocol: TCP
-          port: 8201
-    
     # Allow ArgoCD health checks
     - from:
         - namespaceSelector:
@@ -69,14 +60,6 @@ spec:
   policyTypes:
     - Egress
   egress:
-    # Allow Raft communication to other Vault pods
-    - to:
-        - podSelector:
-            matchLabels:
-              app.kubernetes.io/name: vault
-      ports:
-        - protocol: TCP
-          port: 8201
     
     # Allow Kubernetes API access (for auth method)
     - to:

@@ -29,8 +29,6 @@ jobs:
       
       - name: Post-rollback checks
         run: |
-          echo "Checking seal status..."
-          for i in 0 1 2; do
-            echo "vault-$i:"
-            kubectl exec vault-$i -n vault -- vault status || true
-          done
+          echo "Checking seal status (standalone mode)..."
+          echo "vault-0:"
+          kubectl exec vault-0 -n vault -- vault status || true

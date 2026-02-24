@@ -1,6 +1,6 @@
 ---
 name: Unseal Vault
-description: Unseal Vault pods after restart, reboot, or upgrade
+description: Unseal Vault pod after restart, reboot, or upgrade
 version: 1.0.0
 last_updated: 2026-02-22
 ---
@@ -9,7 +9,7 @@ last_updated: 2026-02-22
 
 ## Goal
 
-Unseal all Vault pods after a node reboot, pod restart, or rolling upgrade. Vault auto-seals on restart by design — 3 of 5 unseal keys are required per pod.
+Unseal vault-0 after a node reboot, pod restart, or rolling upgrade. Vault auto-seals on restart by design — 3 of 5 unseal keys are required.
 
 ## Inputs
 
@@ -20,7 +20,7 @@ Unseal all Vault pods after a node reboot, pod restart, or rolling upgrade. Vaul
 
 **Optional:**
 
-- `target_pods` (list[string], default: ["vault-0", "vault-1", "vault-2"]): Specific pods to unseal
+- `target_pods` (list[string], default: ["vault-0"]): Pod(s) to unseal
 
 ## Tools / Scripts
 
@@ -28,16 +28,14 @@ Unseal all Vault pods after a node reboot, pod restart, or rolling upgrade. Vaul
 
 ## Outputs
 
-- **Unsealed Cluster**: All pods reporting `Sealed: false`
-- **Raft Quorum**: Leader elected, all peers voting
+- **Unsealed Instance**: vault-0 reporting `Sealed: false`
+- **Vault Healthy**: Initialized and unsealed, serving requests
 
 ## Edge Cases & Error Handling
 
 1. **Wrong unseal keys**: Vault rejects invalid keys. After too many failures, Vault may require re-init (data loss).
-2. **Only 1-2 pods sealed**: Safe to unseal individually — other pods maintain quorum.
-3. **All 3 pods sealed simultaneously**: Vault is unavailable. Unseal vault-0 first (leader will re-elect).
-4. **Auto-unseal migration**: If migrating to Transit/KMS auto-unseal, run `vault operator unseal -migrate` with Shamir keys.
+2. **Auto-unseal migration**: If migrating to Transit/KMS auto-unseal, run `vault operator unseal -migrate` with Shamir keys.
 
 ## Learnings
 
-_No learnings yet._
+- **2026-02-24**: Simplified for standalone mode — only vault-0 needs unsealing.

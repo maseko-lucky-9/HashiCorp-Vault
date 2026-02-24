@@ -6,12 +6,12 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 
 ## ✨ Key Features
 
-- **High Availability** — 3-node Raft integrated storage with automatic leader election
+- **Standalone Mode** — Single-pod deployment with file storage on MicroK8s
 - **GitOps Workflow** — Infrastructure-as-Code with PR validation, automated deployment, and one-click rollback
 - **Security Hardened** — Non-root containers, read-only filesystem, IPC_LOCK, seccomp profiles, default-deny NetworkPolicy
 - **Automated CI/CD** — Self-hosted GitHub Actions runner for lint, validate, deploy, and smoke tests
 - **Secret Injection** — Vault Agent Injector (sidecar pattern) for seamless application integration
-- **Automated Backups** — Daily Raft snapshots via CronJob with S3-compatible upload
+- **Automated Backups** — Daily file-storage backups via CronJob with S3-compatible upload
 - **One-Command Bootstrap** — Idempotent ArgoCD + Vault deployment script
 
 ---
@@ -38,25 +38,24 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 │  │ values.yaml │ ──────▶ │ GitHub Actions Runner │       │
 │  │ policies/   │         │ (self-hosted)         │       │
 │  │ manifests/  │         └────────┬─────────────┘       │
-│  └─────────────┘                  │ helm upgrade         │
+│  └─────────────┘                  │ ArgoCD sync          │
 └───────────────────────────────────┼──────────────────────┘
                                     ▼
 ┌──────────────────────────────────────────────────────────┐
 │  MicroK8s Cluster                                        │
 │                                                          │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐                  │
-│  │ vault-0 │◄─┤ vault-1 │◄─┤ vault-2 │  Raft Consensus  │
-│  │ (leader)│  │(standby)│  │(standby)│                   │
-│  └────┬────┘  └────┬────┘  └────┬────┘                   │
-│       │            │            │                         │
-│  ┌────┴────┐  ┌────┴────┐  ┌────┴────┐                   │
-│  │ 10Gi PV │  │ 10Gi PV │  │ 10Gi PV │  hostpath-immed.  │
-│  └─────────┘  └─────────┘  └─────────┘                   │
+│  ┌─────────┐                                             │
+│  │ vault-0 │  Standalone (file storage)                  │
+│  └────┬────┘                                             │
+│       │                                                  │
+│  ┌────┴────┐                                             │
+│  │ 10Gi PV │  microk8s-hostpath-immediate                │
+│  └─────────┘                                             │
 │                                                          │
-│  ┌──────────────────┐  ┌──────────────────┐              │
-│  │ NetworkPolicy    │  │ PodDisruptionBdgt │             │
-│  │ (default-deny)   │  │ (minAvailable: 2) │             │
-│  └──────────────────┘  └──────────────────┘              │
+│  ┌──────────────────┐                                    │
+│  │ NetworkPolicy    │                                    │
+│  │ (default-deny)   │                                    │
+│  └──────────────────┘                                    │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -67,7 +66,7 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 ```
 .
 ├── helm/vault/
-│   └── values.yaml                  # Helm chart values (HA, security, storage)
+│   └── values.yaml                  # Helm chart values (standalone, security, storage)
 ├── argocd/
 │   └── vault-application.yaml       # ArgoCD Application manifest (multi-source)
 ├── .github/
@@ -254,12 +253,11 @@ kubectl exec vault-0 -n vault -- vault operator raft list-peers
 
 ### Storage
 
-| Parameter                         | Default                       | Description                   |
-| --------------------------------- | ----------------------------- | ----------------------------- |
-| `server.dataStorage.size`         | `10Gi`                        | Raft data volume size per pod |
-| `server.dataStorage.storageClass` | `microk8s-hostpath-immediate` | StorageClass name             |
-| `server.auditStorage.size`        | `5Gi`                         | Audit log volume size per pod |
-| `server.ha.replicas`              | `3`                           | Number of Vault server pods   |
+| Parameter                         | Default                       | Description              |
+| --------------------------------- | ----------------------------- | ------------------------ |
+| `server.dataStorage.size`         | `10Gi`                        | File storage volume size |
+| `server.dataStorage.storageClass` | `microk8s-hostpath-immediate` | StorageClass name        |
+| `server.auditStorage.size`        | `5Gi`                         | Audit log volume size    |
 
 ### Networking
 
@@ -283,13 +281,12 @@ kubectl port-forward svc/vault-ui -n vault 8200:8200
 
 ### TLS Configuration
 
-TLS is currently **disabled** for initial setup (`tls_disable = true` in Raft config). To enable TLS in production:
+TLS is currently **disabled** for initial setup (`tls_disable = true` in standalone config). To enable TLS in production:
 
 1. Install cert-manager: `helm install cert-manager jetstack/cert-manager --set crds.enabled=true`
 2. Uncomment `tls_cert_file` and `tls_key_file` in `values.yaml`
 3. Change `tls_disable` to `false`
-4. Update `retry_join` URLs from `http://` to `https://`
-5. Add `leader_tls_servername` to each `retry_join` block
+4. Update `global.tlsDisable` to `false` in `values.yaml`
 
 ---
 
@@ -348,7 +345,7 @@ kubectl exec -n vault vault-0 -- vault kv put \
 ## 🛡️ Security Hardening Checklist
 
 - [ ] Entropy daemon (`haveged`) installed — `entropy_avail > 1000`
-- [ ] PodDisruptionBudget applied — `minAvailable: 2`
+- [ ] PodDisruptionBudget applied — `minAvailable: 0` (standalone mode)
 - [ ] Default-deny NetworkPolicy applied before allow rules
 - [ ] All app namespaces labeled `vault-client: "true"`
 - [ ] Root token revoked after initial setup
@@ -371,8 +368,8 @@ kubectl get pods -n vault
 # Seal status (should show Sealed: false)
 kubectl exec vault-0 -n vault -- vault status
 
-# Raft cluster health
-kubectl exec vault-0 -n vault -- vault operator raft list-peers
+# Data volume usage
+kubectl exec vault-0 -n vault -- df -h /vault/data
 
 # Audit log disk usage
 kubectl exec vault-0 -n vault -- df -h /vault/audit
@@ -386,11 +383,9 @@ kubectl get pvc -n vault
 If pods restart (node reboot, upgrades), Vault will be sealed:
 
 ```bash
-for pod in vault-0 vault-1 vault-2; do
-  kubectl exec -n vault $pod -- vault operator unseal <key1>
-  kubectl exec -n vault $pod -- vault operator unseal <key2>
-  kubectl exec -n vault $pod -- vault operator unseal <key3>
-done
+kubectl exec -n vault vault-0 -- vault operator unseal <key1>
+kubectl exec -n vault vault-0 -- vault operator unseal <key2>
+kubectl exec -n vault vault-0 -- vault operator unseal <key3>
 ```
 
 ### Manual Backup
@@ -415,13 +410,12 @@ kubectl get cronjob -n vault
 1. Update `server.image.tag` in `helm/vault/values.yaml`
 2. Create a PR → GitHub Actions validates (lint + template + security scan)
 3. Merge to `main` → Workflow deploys automatically
-4. Pods use `OnDelete` strategy — manually delete one at a time:
+4. Pods use `OnDelete` strategy — manually delete to pick up the new image:
 
 ```bash
-# Delete standby pods first, leader last
-kubectl delete pod vault-2 -n vault   # Wait for rejoin + unseal
-kubectl delete pod vault-1 -n vault   # Wait for rejoin + unseal
-kubectl delete pod vault-0 -n vault   # Leader steps down, then rejoins
+# Delete pod to trigger recreation with new image
+kubectl delete pod vault-0 -n vault
+# Wait for pod to restart, then unseal
 ```
 
 ### Rollback
@@ -451,11 +445,11 @@ helm rollback vault <revision> -n vault
 
 ### On Push to Main (`deploy.yaml`)
 
-| Job          | Runner      | Description                                  |
-| ------------ | ----------- | -------------------------------------------- |
-| `validate`   | self-hosted | Re-validates Helm values                     |
-| `deploy`     | self-hosted | `helm upgrade --install` (requires approval) |
-| `smoke-test` | self-hosted | Verifies StatefulSet, PVCs, StorageClass     |
+| Job          | Runner      | Description                              |
+| ------------ | ----------- | ---------------------------------------- |
+| `validate`   | self-hosted | Re-validates Helm values                 |
+| `deploy`     | self-hosted | ArgoCD sync (requires approval)          |
+| `smoke-test` | self-hosted | Verifies StatefulSet, PVCs, StorageClass |
 
 ### Manual Rollback (`rollback.yaml`)
 
@@ -470,8 +464,7 @@ Triggered via GitHub UI with a revision number input.
 | Pods stuck in `Pending`             | PVC not binding                    | Check StorageClass: `kubectl get sc` and PVCs: `kubectl get pvc -n vault`                                                             |
 | `CrashLoopBackOff`                  | Permission denied on `/vault/data` | Ensure `extraInitContainers` is in values.yaml — see [VOLUME-PERMISSIONS-FIX](.github/VOLUME-PERMISSIONS-FIX.md)                      |
 | `0/1 Ready` after deploy            | Vault not initialized              | Run `./scripts/init-vault.sh` (expected on first deploy)                                                                              |
-| `Vault is sealed` (503)             | Node reboot or pod restart         | Unseal with 3 of 5 keys — see [Operations Guide](#-operations-guide)                                                                  |
-| Raft join fails with HTTPS          | Protocol mismatch                  | Ensure `retry_join` URLs use `http://` when `tls_disable = true`                                                                      |
+| `Vault is sealed` (503)             | Node reboot or pod restart         | Unseal vault-0 with 3 of 5 keys — see [Operations Guide](#-operations-guide)                                                          |
 | `helm lint` fails                   | No Chart.yaml                      | Expected — use `helm template` instead. See [HELM-LINT-FIX](.github/HELM-LINT-FIX.md)                                                 |
 | `kubectl exec` TLS error            | Kubelet certificate issue          | See [MICROK8S-CERTIFICATE-FIX](.github/MICROK8S-CERTIFICATE-FIX.md)                                                                   |
 | PVC `WaitForFirstConsumer` deadlock | Binding mode issue                 | Use `microk8s-hostpath-immediate` StorageClass. See [WAITFORFIRSTCONSUMER-DEADLOCK-FIX](.github/WAITFORFIRSTCONSUMER-DEADLOCK-FIX.md) |

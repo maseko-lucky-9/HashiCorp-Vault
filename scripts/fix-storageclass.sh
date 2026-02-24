@@ -176,7 +176,7 @@ if [ "$MODE" = "preserve" ]; then
   echo "  ✅ Vault reinstalled with data preserved"
   echo ""
   echo "  Next steps:"
-  echo "  1. If Vault is already initialized: unseal each pod"
+  echo "  1. If Vault is already initialized: unseal vault-0"
   echo "     kubectl exec -n vault vault-0 -- vault operator unseal <key>"
   echo "  2. If this is a fresh deployment: initialize Vault"
   echo "     cd scripts && ./init-vault.sh"

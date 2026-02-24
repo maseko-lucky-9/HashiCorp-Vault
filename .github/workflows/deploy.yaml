@@ -185,14 +185,17 @@ jobs:
           echo "✅ Infrastructure manifests applied"
           kubectl get storageclass microk8s-hostpath-immediate
 
-      - name: Deploy Vault
+      - name: Deploy Vault via ArgoCD
         run: |
-          helm upgrade --install vault hashicorp/vault \
-            --version 0.32.0 \
-            --namespace vault \
-            --create-namespace \
-            -f helm/vault/values.yaml \
-            --timeout 10m
+          # ArgoCD is the source of truth — sync the application
+          # The Git push that triggered this workflow already updated the manifests.
+          # Force ArgoCD to sync immediately rather than waiting for poll interval.
+          if command -v argocd &> /dev/null; then
+            argocd app sync vault --force --timeout 300 || true
+          else
+            echo "ℹ️  ArgoCD CLI not available — ArgoCD will auto-sync from Git"
+            echo "   Self-heal is enabled, sync should occur within poll interval."
+          fi
           # NOTE: --wait is intentionally omitted.
           # On first deploy, Vault pods won't become Ready until
           # manually initialized with: ./scripts/init-vault.sh
@@ -200,15 +203,15 @@ jobs:
       - name: Wait for StatefulSet rollout
         run: |
           echo "Waiting for Vault pods to be created..."
-          sleep 15
+          sleep 30
           kubectl get pods -n vault
           echo ""
           if [ "${{ needs.pre-deploy-check.outputs.fresh_deploy }}" = "true" ]; then
-            echo "ℹ️  Fresh deployment — Vault pods will show 0/1 Ready until initialized."
+            echo "ℹ️  Fresh deployment — Vault pod will show 0/1 Ready until initialized."
             echo "   Run ./scripts/init-vault.sh after this workflow completes."
           else
-            echo "ℹ️  Redeployment — Vault pods will become Ready after unsealing."
-            echo "   If pods remain sealed, run: ./scripts/init-vault.sh (unseal only)"
+            echo "ℹ️  Redeployment — Vault pod will become Ready after unsealing."
+            echo "   If pod remains sealed, run: ./scripts/init-vault.sh --unseal-only"
           fi
 
   smoke-test:
@@ -231,11 +234,11 @@ jobs:
 
           # Verify StatefulSet was created with correct replica count
           DESIRED=$(kubectl get statefulset vault -n vault -o jsonpath='{.spec.replicas}')
-          if [ "$DESIRED" != "3" ]; then
-            echo "ERROR: Expected 3 replicas, got $DESIRED"
+          if [ "$DESIRED" != "1" ]; then
+            echo "ERROR: Expected 1 replica (standalone mode), got $DESIRED"
             exit 1
           fi
-          echo "✅ StatefulSet created with $DESIRED replicas"
+          echo "✅ StatefulSet created with $DESIRED replica (standalone mode)"
 
       - name: Check PVCs are bound
         run: |

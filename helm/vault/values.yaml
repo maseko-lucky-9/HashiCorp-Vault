@@ -4,7 +4,7 @@
 
 global:
   enabled: true
-  tlsDisable: false # NEVER disable TLS in production
+  tlsDisable: true  # Must match tls_disable in standalone config below
 
 injector:
   enabled: true
@@ -83,48 +83,35 @@ server:
         add:
           - IPC_LOCK # Required for mlock() to prevent secrets from swapping to disk
 
-  # High Availability configuration
+  # High Availability configuration - DISABLED for single-node MicroK8s
+  # To enable HA, ensure you have 3+ nodes and set ha.enabled: true
   ha:
+    enabled: false
+
+  # Standalone mode configuration for single-node dev/test
+  standalone:
     enabled: true
-    replicas: 3
+    config: |
+      ui = true
 
-    raft:
-      enabled: true
-      setNodeId: true
+      listener "tcp" {
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+        tls_disable = true  # Disable for initial setup — enable after cert-manager is configured
+        # tls_cert_file = "/vault/tls/tls.crt"
+        # tls_key_file  = "/vault/tls/tls.key"
+      }
 
-      config: |
-        ui = true
+      storage "file" {
+        path = "/vault/data"
+      }
 
-        listener "tcp" {
-          address = "[::]:8200"
-          cluster_address = "[::]:8201"
-          tls_disable = true  # Disable for initial setup — enable after cert-manager is configured
-          # tls_cert_file = "/vault/tls/tls.crt"
-          # tls_key_file  = "/vault/tls/tls.key"
-        }
+      service_registration "kubernetes" {}
 
-        storage "raft" {
-          path = "/vault/data"
-          
-          retry_join {
-            leader_api_addr = "http://vault-0.vault-internal:8200"
-          }
-          
-          retry_join {
-            leader_api_addr = "http://vault-1.vault-internal:8200"
-          }
-          
-          retry_join {
-            leader_api_addr = "http://vault-2.vault-internal:8200"
-          }
-        }
-
-        service_registration "kubernetes" {}
-
-        telemetry {
-          prometheus_retention_time = "30s"
-          disable_hostname = true
-        }
+      telemetry {
+        prometheus_retention_time = "30s"
+        disable_hostname = true
+      }
 
   # Data storage - 10Gi per pod for Raft data
   dataStorage:

@@ -1,6 +1,6 @@
 ---
 name: Initialize Vault
-description: First-time initialization of a freshly deployed Vault cluster
+description: First-time initialization of a freshly deployed Vault instance
 version: 1.0.0
 last_updated: 2026-02-22
 ---
@@ -9,7 +9,7 @@ last_updated: 2026-02-22
 
 ## Goal
 
-Initialize a freshly deployed Vault cluster — generate unseal keys, unseal all pods, join Raft peers, enable auth/engines, and apply policies.
+Initialize a freshly deployed Vault instance — generate unseal keys, unseal vault-0, enable auth/engines, and apply policies.
 
 ## Inputs
 
@@ -34,15 +34,15 @@ Initialize a freshly deployed Vault cluster — generate unseal keys, unseal all
 
 - **Unseal Keys**: 5 base64-encoded keys printed to stdout (SAVE IMMEDIATELY)
 - **Root Token**: Single root token printed to stdout (revoke after setup)
-- **Configured Cluster**: K8s auth, KV v2, file+syslog audit, all policies applied
+- **Configured Instance**: K8s auth, KV v2, file+syslog audit, all policies applied
 
 ## Edge Cases & Error Handling
 
 1. **Vault already initialized**: Script exits cleanly with a warning — no destructive action
 2. **Pod not running**: Pre-check fails if `vault-0` is not in Running state. Fix: check `kubectl get pods -n vault`
-3. **Raft join fails**: Most common cause is protocol mismatch (http vs https). Ensure `init-vault.sh` join URL matches `values.yaml` `retry_join` protocol
-4. **Syslog audit enable fails**: Non-fatal on MicroK8s (syslog may not be available). Script continues.
+3. **Syslog audit enable fails**: Non-fatal on MicroK8s (syslog may not be available). Script continues.
 
 ## Learnings
 
 - **2026-02-22**: Fixed HTTPS→HTTP mismatch in `init-vault.sh` raft join command. Must match `values.yaml` `tls_disable` setting.
+- **2026-02-24**: Migrated from HA Raft to standalone file-storage. Removed raft join steps and multi-pod references.

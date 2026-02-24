@@ -37,7 +37,6 @@ sudo apt install -y curl wget jq
 sudo ufw allow 22/tcp      # SSH
 sudo ufw allow 6443/tcp    # Kubernetes API
 sudo ufw allow 8200/tcp    # Vault API
-sudo ufw allow 8201/tcp    # Vault cluster
 sudo ufw --force enable
 ```
 
@@ -222,8 +221,6 @@ Expected output:
 ```
 NAME                                    READY   STATUS    RESTARTS   AGE
 vault-0                                 0/1     Running   0          2m
-vault-1                                 0/1     Running   0          2m
-vault-2                                 0/1     Running   0          2m
 vault-agent-injector-xxxxxxxxxx-xxxxx   1/1     Running   0          2m
 ```
 
@@ -249,8 +246,8 @@ chmod +x init-vault.sh backup-vault.sh
 # Check seal status (should be "Sealed: false")
 kubectl exec -n vault vault-0 -- vault status
 
-# Check Raft cluster (should show 3 voters, 1 leader)
-kubectl exec -n vault vault-0 -- vault operator raft list-peers
+# Check data volume
+kubectl exec -n vault vault-0 -- df -h /vault/data
 
 # Check audit logs
 kubectl exec -n vault vault-0 -- ls -lh /vault/audit/
@@ -373,14 +370,13 @@ kubectl logs -n apps test-vault-injection -c app
 
 ### Single-Node Cluster Configuration
 
-Since you're running a **single-node cluster**, you can **ignore** the node affinity configuration in `helm/vault/values.yaml`. The commented-out `affinity` section is only needed for multi-node clusters using `local-path` StorageClass to prevent data loss when pods migrate between nodes.
+Since you're running a **single-node cluster in standalone mode**:
 
-For single-node setups:
-
-- All 3 Vault pods will run on the same node
-- `local-path` StorageClass works perfectly
+- Only 1 Vault pod (`vault-0`) runs on the node
+- File storage backend stores data in `/vault/data`
+- No Raft consensus or leader election needed
+- `local-path` or `microk8s-hostpath-immediate` StorageClass works perfectly
 - No node affinity configuration needed
-- PodDisruptionBudget still protects against accidental simultaneous eviction
 
 ### Unseal Keys Storage
 
@@ -415,14 +411,14 @@ kubectl exec -n vault vault-0 -- vault operator generate-root -init
 | Entropy < 1000                 | Restart haveged: `sudo systemctl restart haveged`                           |
 | Pods stuck in Pending          | Check PVC: `kubectl get pvc -n vault`                                       |
 | Certificate not Ready          | Check cert-manager logs: `kubectl logs -n cert-manager -l app=cert-manager` |
-| Vault sealed after restart     | Run unseal on each pod with 3 of 5 keys                                     |
+| Vault sealed after restart     | Run unseal on vault-0 with 3 of 5 keys                                      |
 | NetworkPolicy blocking traffic | Verify namespace labels: `kubectl get ns --show-labels`                     |
 
 ---
 
 ## ✅ Deployment Complete!
 
-Your production-ready Vault cluster is now running. Next steps:
+Your production-ready Vault instance is now running. Next steps:
 
 1. Configure your applications to use Vault Agent Injector
 2. Set up monitoring (Prometheus + Grafana)

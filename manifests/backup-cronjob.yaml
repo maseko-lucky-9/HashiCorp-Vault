@@ -53,28 +53,33 @@ spec:
                   set -euo pipefail
                   
                   TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-                  SNAPSHOT_FILE="vault-raft-backup-${TIMESTAMP}.snap"
+                  BACKUP_FILE="vault-data-backup-${TIMESTAMP}.tar.gz"
                   
-                  echo "Taking Raft snapshot..."
-                  kubectl exec -n vault vault-0 -- vault operator raft snapshot save "/tmp/${SNAPSHOT_FILE}"
+                  # Standalone mode uses file storage — backup via tar
+                  echo "Creating file-storage backup..."
+                  kubectl exec -n vault vault-0 -c vault -- \
+                    tar czf "/tmp/${BACKUP_FILE}" -C /vault/data .
                   
-                  echo "Copying snapshot from pod..."
-                  kubectl cp "vault/vault-0:/tmp/${SNAPSHOT_FILE}" "/backups/${SNAPSHOT_FILE}"
+                  echo "Copying backup from pod..."
+                  kubectl cp "vault/vault-0:/tmp/${BACKUP_FILE}" "/backups/${BACKUP_FILE}"
+                  
+                  # Clean up temp file in pod
+                  kubectl exec -n vault vault-0 -c vault -- rm -f "/tmp/${BACKUP_FILE}"
                   
                   # Prune local backups older than 7 days
                   echo "Pruning backups older than 7 days..."
-                  find /backups -name "vault-raft-backup-*.snap" -mtime +7 -delete 2>/dev/null || true
+                  find /backups -name "vault-data-backup-*.tar.gz" -mtime +7 -delete 2>/dev/null || true
                   
                   # Upload to S3 if configured
                   if [ -n "${S3_BUCKET:-}" ]; then
                     echo "Uploading to S3..."
-                    aws s3 cp "/backups/${SNAPSHOT_FILE}" "${S3_BUCKET}/${SNAPSHOT_FILE}"
+                    aws s3 cp "/backups/${BACKUP_FILE}" "${S3_BUCKET}/${BACKUP_FILE}"
                   else
                     echo "⚠️  S3_BUCKET not configured — backup stored locally only"
                   fi
                   
-                  echo "✅ Backup complete: ${SNAPSHOT_FILE}"
-                  ls -lh /backups/vault-raft-backup-*.snap | tail -5
+                  echo "✅ Backup complete: ${BACKUP_FILE}"
+                  ls -lh /backups/vault-data-backup-*.tar.gz | tail -5
               resources:
                 requests:
                   cpu: 50m

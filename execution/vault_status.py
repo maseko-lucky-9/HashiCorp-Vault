@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Vault cluster status checker.
+Vault instance status checker.
 
-Queries all Vault pods in a Kubernetes namespace and reports their
-initialization, seal, and Raft peer status. Designed to be called by
+Queries Vault pod(s) in a Kubernetes namespace and reports their
+initialization, seal, and storage status. Designed to be called by
 the orchestration layer before init, unseal, or backup operations.
 
 Usage:
     python vault_status.py
-    python vault_status.py --namespace vault --replicas 3 --output json
+    python vault_status.py --namespace vault --replicas 1 --output json
 """
 
 import sys
@@ -171,7 +171,7 @@ def check_cluster(namespace, replicas, log):
     Returns:
         dict: Cluster status summary
     """
-    log('INFO', f'Checking Vault cluster in namespace "{namespace}" ({replicas} expected replicas)')
+    log('INFO', f'Checking Vault in namespace "{namespace}" ({replicas} expected replica(s))')
 
     pods = []
     for i in range(replicas):
@@ -222,7 +222,7 @@ def check_cluster(namespace, replicas, log):
 def main():
     """Main entry point."""
     parser = argparse.ArgumentParser(
-        description='Check Vault cluster status across all pods',
+        description='Check Vault instance status across pod(s)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__
     )
@@ -236,8 +236,8 @@ def main():
     parser.add_argument(
         '--replicas', '-r',
         type=int,
-        default=3,
-        help='Expected number of Vault replicas (default: 3)'
+        default=1,
+        help='Expected number of Vault replicas (default: 1)'
     )
 
     parser.add_argument(

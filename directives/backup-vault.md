@@ -1,6 +1,6 @@
 ---
 name: Backup Vault
-description: Take and store Raft snapshots for disaster recovery
+description: Take and store file-storage backups for disaster recovery
 version: 1.0.0
 last_updated: 2026-02-22
 ---
@@ -9,14 +9,14 @@ last_updated: 2026-02-22
 
 ## Goal
 
-Create a point-in-time Raft snapshot of the Vault cluster and store it for disaster recovery.
+Create a tar archive of the Vault file storage backend (`/vault/data`) for disaster recovery.
 
 ## Inputs
 
 **Required:**
 
 - `vault_namespace` (string, default: "vault"): Kubernetes namespace
-- `vault_pod` (string, default: "vault-0"): Pod to snapshot (must be leader or standby)
+- `vault_pod` (string, default: "vault-0"): Pod to backup (standalone mode)
 
 **Optional:**
 
@@ -25,22 +25,23 @@ Create a point-in-time Raft snapshot of the Vault cluster and store it for disas
 
 ## Tools / Scripts
 
-- `scripts/backup-vault.sh` — Manual one-shot Raft snapshot
+- `scripts/backup-vault.sh` — Creates tar archive of file storage data and uploads to S3
 - `manifests/backup-cronjob.yaml` — Automated daily CronJob (02:00 UTC)
-- `execution/vault_status.py` — Pre-flight: verify Vault is unsealed before snapshot
+- `execution/vault_status.py` — Pre-flight: verify Vault is unsealed before backup
 
 ## Outputs
 
-- **Snapshot file**: `vault-raft-backup-YYYYMMDD-HHMMSS.snap` at `/var/backups/vault/`
+- **Backup file**: `vault-data-backup-YYYYMMDD-HHMMSS.tar.gz` at `/var/backups/vault/`
 - **S3 copy** (if configured): Same file uploaded to `${S3_BUCKET}/`
 
 ## Edge Cases & Error Handling
 
-1. **Vault is sealed**: Snapshot fails. Run unseal procedure first.
+1. **Vault is sealed**: Backup fails. Run unseal procedure first.
 2. **S3 credentials missing**: Backup stored locally only. Warning printed.
 3. **Disk full on host**: `hostPath` at `/var/backups/vault` fills up. Pruning keeps only last 7 days.
-4. **Pod not leader**: `vault operator raft snapshot save` works on any peer, not just leader.
+4. **Concurrent writes**: File-storage tar is not guaranteed consistent; for crash-consistent backup, seal Vault briefly.
 
 ## Learnings
 
 - **2026-02-22**: Changed CronJob volume from `emptyDir` to `hostPath` (`/var/backups/vault`). Previous `emptyDir` caused all backups to be lost when the Job pod terminated.
+- **2026-02-24**: Migrated from Raft snapshots to file-storage tar backups after HA → standalone transition.

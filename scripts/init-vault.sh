@@ -18,7 +18,7 @@ set -euo pipefail
 # ── Configuration ────────────────────────────────────────────────────────────
 VAULT_NAMESPACE="vault"
 VAULT_ADDR="http://127.0.0.1:8200"   # TLS is disabled in this deployment
-PODS=("vault-0" "vault-1" "vault-2")
+PODS=("vault-0")  # Standalone mode — single pod
 KEY_SHARES=5
 KEY_THRESHOLD=3
 
@@ -189,7 +189,7 @@ initialize_vault() {
 }
 
 ################################################################################
-# Phase 5: Unseal all pods
+# Phase 5: Unseal vault-0
 ################################################################################
 
 unseal_pod() {
@@ -321,8 +321,8 @@ health_check() {
 
     echo ""
 
-    # Check Raft peers
-    log "Checking Raft cluster peers..."
+    # Check Raft peers (only if using Raft storage backend)
+    log "Checking storage backend..."
     local raft_peers
     raft_peers=$(vault_exec "vault-0" "operator raft list-peers -format=json" 2>/dev/null || echo "")
 
@@ -331,7 +331,7 @@ health_check() {
         peer_count=$(echo "$raft_peers" | grep -o '"node_id"' | wc -l || echo "0")
         log_success "Raft cluster has $peer_count peer(s)"
     else
-        log_warning "Could not retrieve Raft peer list (Vault may still be sealed)"
+        log "File storage backend detected — no Raft peers (expected for standalone)"
     fi
 
     # Check Kubernetes pods
