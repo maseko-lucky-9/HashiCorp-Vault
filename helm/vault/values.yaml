@@ -106,7 +106,8 @@ server:
         path = "/vault/data"
       }
 
-      service_registration "kubernetes" {}
+      # NOTE: service_registration "kubernetes" {} is NOT compatible with
+      # file storage (standalone mode). Only enable with HA backends (Raft/Consul).
 
       telemetry {
         prometheus_retention_time = "30s"
