@@ -20,7 +20,6 @@ on:
         type: choice
         options:
           - production
-          - staging
 
 jobs:
   validate:

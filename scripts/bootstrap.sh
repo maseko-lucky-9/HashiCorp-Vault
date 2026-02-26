@@ -664,10 +664,10 @@ phase_validate() {
     local vault_pods
     vault_pods=$(kubectl get pods -n "$VAULT_NAMESPACE" --no-headers 2>/dev/null | wc -l)
 
-    if [ "$vault_pods" -ge 3 ]; then
+    if [ "$vault_pods" -ge 1 ]; then
         results+="  Vault Pods      │ ✅ Deployed   │ $vault_pods pods (sealed until init)\n"
     elif [ "$vault_pods" -gt 0 ]; then
-        results+="  Vault Pods      │ ⚠️  Partial    │ $vault_pods pods (expected 3+)\n"
+        results+="  Vault Pods      │ ⚠️  Partial    │ $vault_pods pods (expected 1+)\n"
     else
         results+="  Vault Pods      │ ⏳ Pending    │ ArgoCD is still syncing\n"
     fi

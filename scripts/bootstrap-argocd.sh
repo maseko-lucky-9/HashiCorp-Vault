@@ -297,7 +297,7 @@ verify_deployment() {
     vault_pods=$(kubectl get pods -n "$VAULT_NAMESPACE" \
         --no-headers 2>/dev/null | wc -l)
     
-    if [ "$vault_pods" -ge 3 ]; then
+    if [ "$vault_pods" -ge 1 ]; then
         log_success "Vault pods deployed ($vault_pods pods)"
         log_warning "Note: Vault pods will be sealed until initialized"
     else

@@ -1,6 +1,8 @@
-# Vault Deployment Checklist — Server Execution Steps
+# Vault Deployment Checklist — Server Execution Steps (Live Environment)
 
-This checklist provides the exact commands to run on your Ubuntu server to deploy Vault.
+This checklist provides the exact commands to run on your **Ubuntu + MicroK8s server** (Live environment) to deploy Vault.
+
+> **For local development** (WSL + Minikube), see `scripts/local-dev.sh` instead.
 
 ## ✅ Pre-Deployment Checklist
 
@@ -119,10 +121,7 @@ spec:
     - vault.vault.svc
     - vault.vault.svc.cluster.local
     - vault-0.vault-internal
-    - vault-1.vault-internal
-    - vault-2.vault-internal
     - vault-active
-    - vault-standby
   duration: 8760h  # 1 year
   renewBefore: 720h  # 30 days
 EOF

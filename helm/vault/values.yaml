@@ -1,5 +1,5 @@
-# HashiCorp Vault Helm Chart Values
-# Production-ready configuration for self-hosted Kubernetes
+# HashiCorp Vault Helm Chart Values — Shared Base
+# Environment-specific overrides: values-local.yaml (dev) or values-live.yaml (prod)
 # Chart version: 0.32.0 | Vault version: 1.21.0
 
 global:
@@ -114,44 +114,19 @@ server:
         disable_hostname = true
       }
 
-  # Data storage - 10Gi per pod for Raft data
+  # Data storage — sizes and storageClass set per-environment
   dataStorage:
     enabled: true
-    size: 10Gi
-    storageClass: "microk8s-hostpath-immediate" # Immediate binding to avoid WaitForFirstConsumer deadlock
     accessMode: ReadWriteOnce
 
-  # Audit storage - 5Gi for audit logs
+  # Audit storage — sizes and storageClass set per-environment
   auditStorage:
     enabled: true
-    size: 5Gi
-    storageClass: "microk8s-hostpath-immediate"
     accessMode: ReadWriteOnce
 
-  # Init container to fix volume permissions
-  # MicroK8s hostpath provisioner creates volumes owned by root (0:0)
-  # Vault runs as uid 100, gid 1000, so we need to chown the volumes
-  extraInitContainers:
-    - name: fix-permissions
-      image: busybox:1.36
-      command:
-        - sh
-        - -c
-        - |
-          echo "Fixing volume permissions..."
-          chown -R 100:1000 /vault/data
-          chown -R 100:1000 /vault/audit
-          chmod -R 755 /vault/data
-          chmod -R 755 /vault/audit
-          echo "Permissions fixed successfully"
-      volumeMounts:
-        - name: data
-          mountPath: /vault/data
-        - name: audit
-          mountPath: /vault/audit
-      securityContext:
-        runAsUser: 0  # Must run as root to chown
-        runAsNonRoot: false
+  # Init container for volume permissions — set per-environment
+  # MicroK8s needs fix-permissions (see values-live.yaml)
+  # Minikube handles permissions natively (see values-local.yaml)
 
   # Node affinity - CRITICAL when using local-path StorageClass
   # Uncomment and configure for multi-node clusters to pin pods to specific nodes
@@ -174,7 +149,7 @@ server:
     # type: LoadBalancer
     # loadBalancerIP: 192.168.1.100
 
-  # Standalone service for internal Raft communication
+  # Internal service for StatefulSet pod DNS
   serviceInternal:
     enabled: true
 

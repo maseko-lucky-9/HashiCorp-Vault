@@ -1,0 +1,49 @@
+# Local Development Environment Overrides (WSL + Minikube)
+# Layer on top of values.yaml: helm template -f values.yaml -f values-local.yaml
+# Chart version: 0.32.0 | Vault version: 1.21.0
+
+# ── Resource Limits ──────────────────────────────────────────────────────────
+# Relaxed for local development — no need for production resource guarantees
+
+injector:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 150m
+      memory: 128Mi
+
+server:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 512Mi
+
+  # ── Storage ──────────────────────────────────────────────────────────────
+  # Minikube uses the built-in 'standard' StorageClass (hostpath provisioner)
+  # Smaller volumes are fine for dev/test
+
+  dataStorage:
+    size: 2Gi
+    storageClass: "standard"
+
+  auditStorage:
+    size: 1Gi
+    storageClass: "standard"
+
+  # ── Init Container ──────────────────────────────────────────────────────
+  # Minikube's hostpath provisioner handles permissions correctly,
+  # so the fix-permissions init container is not needed.
+  extraInitContainers: null
+
+  # ── Service ─────────────────────────────────────────────────────────────
+  # NodePort for easy local access via `minikube service`
+  service:
+    type: NodePort
+
+ui:
+  serviceType: NodePort

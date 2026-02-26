@@ -16,6 +16,7 @@ spec:
       helm:
         valueFiles:
           - $values/helm/vault/values.yaml
+          - $values/helm/vault/values-live.yaml
 
     - repoURL: https://github.com/maseko-lucky-9/HashiCorp-Vault.git
       targetRevision: main  # Pin to a Git tag (e.g. v1.0.0) for production stability

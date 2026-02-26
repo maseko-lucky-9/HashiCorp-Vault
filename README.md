@@ -1,6 +1,6 @@
 # HashiCorp Vault on Kubernetes — GitOps Deployment
 
-Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) on a self-hosted MicroK8s cluster using GitOps principles (Helm + ArgoCD), automated CI/CD via GitHub Actions with a self-hosted runner, and comprehensive security hardening.
+Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) on Kubernetes using GitOps principles (Helm + ArgoCD), with support for **Local** (WSL + Minikube) and **Live** (MicroK8s) environments.
 
 ---
 
@@ -18,14 +18,30 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 
 ## 📋 Quick Reference
 
-| Component      | Version            | Purpose                       |
-| -------------- | ------------------ | ----------------------------- |
-| Vault          | 1.21.0             | Secrets management            |
-| Helm Chart     | 0.32.0             | Deployment packaging          |
-| MicroK8s       | 1.31+              | Kubernetes distribution       |
-| ArgoCD         | 2.14+              | GitOps continuous delivery    |
-| GitHub Actions | —                  | CI/CD (self-hosted runner)    |
-| StorageClass   | hostpath-immediate | Persistent volume provisioner |
+| Component      | Version           | Purpose                    |
+| -------------- | ----------------- | -------------------------- |
+| Vault          | 1.21.0            | Secrets management         |
+| Helm Chart     | 0.32.0            | Deployment packaging       |
+| MicroK8s       | 1.31+ (Live)      | Production Kubernetes      |
+| Minikube       | Latest (Local)    | Development Kubernetes     |
+| ArgoCD         | 2.14+ (Live only) | GitOps continuous delivery |
+| GitHub Actions | —                 | CI/CD (self-hosted runner) |
+
+---
+
+## 🌍 Environments
+
+|                    | **Local (Dev/Test)**                | **Live (Production)**                    |
+| ------------------ | ----------------------------------- | ---------------------------------------- |
+| **Runtime**        | WSL 2 + Minikube                    | Ubuntu + MicroK8s (single-node)          |
+| **Deployer**       | `helm install` via `local-dev.sh`   | ArgoCD (GitOps)                          |
+| **StorageClass**   | `standard` (Minikube default)       | `microk8s-hostpath-immediate`            |
+| **Data Volume**    | 2Gi                                 | 10Gi                                     |
+| **Audit Volume**   | 1Gi                                 | 5Gi                                      |
+| **Resources**      | Relaxed (100m/128Mi)                | Production (250m/256Mi → 500m/1Gi)       |
+| **Service Type**   | NodePort                            | ClusterIP                                |
+| **Init Container** | None (Minikube handles perms)       | `fix-permissions` (MicroK8s needs chown) |
+| **Values Files**   | `values.yaml` + `values-local.yaml` | `values.yaml` + `values-live.yaml`       |
 
 ---
 
@@ -66,7 +82,9 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 ```
 .
 ├── helm/vault/
-│   └── values.yaml                  # Helm chart values (standalone, security, storage)
+│   ├── values.yaml                  # Shared base values (all environments)
+│   ├── values-local.yaml            # Local overrides (WSL + Minikube)
+│   └── values-live.yaml             # Live overrides (MicroK8s production)
 ├── argocd/
 │   └── vault-application.yaml       # ArgoCD Application manifest (multi-source)
 ├── .github/
@@ -76,22 +94,23 @@ Production-ready deployment of [HashiCorp Vault](https://www.vaultproject.io/) o
 │       ├── bootstrap.yml             # ArgoCD + Vault bootstrap (push/dispatch/schedule)
 │       └── rollback.yaml             # Manual rollback (workflow_dispatch)
 ├── manifests/
-│   ├── storageclass-immediate.yaml   # Custom StorageClass (Immediate binding)
+│   ├── storageclass-immediate.yaml   # Custom StorageClass (Live only)
 │   ├── network-policy.yaml           # Default-deny + Vault-specific allow rules
-│   ├── pod-disruption-budget.yaml    # PDB (minAvailable: 2)
-│   └── backup-cronjob.yaml           # Daily Raft snapshot CronJob
+│   ├── pod-disruption-budget.yaml    # PDB (minAvailable: 0, standalone)
+│   └── backup-cronjob.yaml           # Daily file-storage backup CronJob
 ├── policies/
 │   ├── app-readonly.hcl              # Namespace-scoped read-only access
 │   ├── admin.hcl                     # Admin (denies sys/seal)
 │   └── database-dynamic.hcl          # Dynamic DB credential generation
 ├── scripts/
-│   ├── bootstrap.sh                  # Production bootstrap (ArgoCD + Vault + deps)
+│   ├── bootstrap.sh                  # Live bootstrap (ArgoCD + Vault + deps)
 │   ├── bootstrap-argocd.sh           # Legacy bootstrap (superseded by bootstrap.sh)
+│   ├── local-dev.sh                  # Local dev bootstrap (WSL + Minikube)
 │   ├── init-vault.sh                 # First-time Vault initialization
-│   ├── backup-vault.sh               # Manual Raft snapshot + S3 upload
+│   ├── backup-vault.sh               # Manual backup + S3 upload
 │   ├── fix-storageclass.sh           # StorageClass migration helper
 │   └── BOOTSTRAP-README.md           # Bootstrap script documentation
-├── DEPLOYMENT.md                     # Step-by-step server setup guide
+├── DEPLOYMENT.md                     # Step-by-step server setup guide (Live)
 └── README.md                         # This file
 ```
 
@@ -226,10 +245,9 @@ chmod +x init-vault.sh
 This script will:
 
 1. Initialize vault-0 with Shamir keys (5 shares, 3 threshold)
-2. Unseal all 3 pods
-3. Join vault-1 and vault-2 to the Raft cluster
-4. Enable Kubernetes auth, KV v2, and audit logging
-5. Apply all policies from `policies/`
+2. Unseal vault-0
+3. Enable Kubernetes auth, KV v2, and audit logging
+4. Apply all policies from `policies/`
 
 > [!CAUTION]
 > **Save the unseal keys and root token** to secure offline storage immediately. These cannot be recovered if lost.
@@ -251,13 +269,15 @@ kubectl exec vault-0 -n vault -- vault operator raft list-peers
 
 ## ⚙️ Configuration Options
 
-### Storage
+### Storage (per-environment)
 
-| Parameter                         | Default                       | Description              |
-| --------------------------------- | ----------------------------- | ------------------------ |
-| `server.dataStorage.size`         | `10Gi`                        | File storage volume size |
-| `server.dataStorage.storageClass` | `microk8s-hostpath-immediate` | StorageClass name        |
-| `server.auditStorage.size`        | `5Gi`                         | Audit log volume size    |
+Storage sizes and StorageClass are set via environment overlays:
+
+| Parameter                         | Local (dev) | Live (prod)                   |
+| --------------------------------- | ----------- | ----------------------------- |
+| `server.dataStorage.size`         | `2Gi`       | `10Gi`                        |
+| `server.dataStorage.storageClass` | `standard`  | `microk8s-hostpath-immediate` |
+| `server.auditStorage.size`        | `1Gi`       | `5Gi`                         |
 
 ### Networking
 
