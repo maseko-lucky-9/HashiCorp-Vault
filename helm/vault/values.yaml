@@ -60,7 +60,11 @@ server:
 
   livenessProbe:
     enabled: true
-    path: /v1/sys/health?standbyok=true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+    initialDelaySeconds: 30
+    periodSeconds: 15
+    failureThreshold: 5
+    timeoutSeconds: 5
 
   # Enable process namespace sharing for better signal handling
   shareProcessNamespace: true
