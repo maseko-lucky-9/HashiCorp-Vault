@@ -21,6 +21,15 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    # Allow Nginx Ingress Controller → Vault API (vault.local reverse proxy)
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress
+      ports:
+        - protocol: TCP
+          port: 8200
+
     # Allow Vault API (8200) from labeled app namespaces
     - from:
         - namespaceSelector:

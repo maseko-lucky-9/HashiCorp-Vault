@@ -157,6 +157,24 @@ server:
   serviceInternal:
     enabled: true
 
+  # Ingress — reverse proxy entry point for local network access
+  # TLS termination at the ingress layer; backend talks HTTP to ClusterIP service
+  # Requires: microk8s enable ingress (Nginx Ingress Controller)
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+      nginx.ingress.kubernetes.io/proxy-body-size: "0"           # No upload size limit (for large secret payloads)
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "900"      # Long timeout for batch operations
+      nginx.ingress.kubernetes.io/proxy-send-timeout: "900"
+    hosts:
+      - host: vault.local
+    tls:
+      - secretName: vault-tls
+        hosts:
+          - vault.local
+
 ui:
   enabled: true
   serviceType: ClusterIP

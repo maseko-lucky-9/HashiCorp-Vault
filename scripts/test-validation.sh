@@ -91,6 +91,20 @@ if helm template vault hashicorp/vault \
     else
         log_fail "Live: auditStorage size 5Gi missing"
     fi
+
+    # Validate Ingress host vault.local
+    if grep -q "vault.local" /tmp/rendered-live.yaml; then
+        log_pass "Live: Ingress host vault.local present"
+    else
+        log_fail "Live: Ingress host vault.local missing"
+    fi
+
+    # Validate TLS secret reference
+    if grep -q "vault-tls" /tmp/rendered-live.yaml; then
+        log_pass "Live: TLS secret vault-tls referenced"
+    else
+        log_fail "Live: TLS secret vault-tls missing"
+    fi
 else
     log_fail "Helm template (Live) failed"
 fi
@@ -141,6 +155,13 @@ if helm template vault hashicorp/vault \
         log_pass "Local: Relaxed memory limit (512Mi) present"
     else
         log_fail "Local: Relaxed memory limit (512Mi) missing"
+    fi
+
+    # Validate Ingress is disabled for local
+    if grep -q "kind: Ingress" /tmp/rendered-local.yaml; then
+        log_fail "Local: Ingress should be disabled"
+    else
+        log_pass "Local: Ingress correctly disabled"
     fi
 else
     log_fail "Helm template (Local) failed"

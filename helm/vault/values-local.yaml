@@ -15,6 +15,10 @@ injector:
       memory: 128Mi
 
 server:
+  # Ingress disabled for local dev — use NodePort + minikube service or port-forward
+  ingress:
+    enabled: false
+
   resources:
     requests:
       cpu: 100m
